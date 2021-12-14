@@ -1,119 +1,47 @@
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
 
     if args.len() < 1 {
-        return;
+        eprintln!("expected image filename");
+        std::process::exit(-1);
     }
 
-    let filename = args[0].clone();
-    let mdata = std::fs::metadata(&filename).unwrap();
-    let mut last_write_time = mdata.modified().unwrap();
-
+    
     let el = glutin::event_loop::EventLoop::new();
     let wb = glutin::window::WindowBuilder::new()
-        .with_title("fuzzy pickles");
+    .with_title("fuzzy pickles");
     
     let wc = glutin::ContextBuilder::new().build_windowed(wb, &el).unwrap();
     let wc = unsafe { wc.make_current().unwrap() };
     
     gl::load_with(|p| wc.get_proc_address(p) as *const _);
-
     
-    let program = create_program();
-    
-    let image_size;
-    let mut texture1 = 0;
-    unsafe {
-        gl::GenTextures(1, &mut texture1);
-        gl::BindTexture(gl::TEXTURE_2D, texture1);
-        
-        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as _);
-        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as _);
-        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as _);
-        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as _);
-
-        let metadata = load_texture(&filename, texture1);
-        
-        let img = load_image(&filename);
-        
-        let data = img.as_ptr() as _;
-        gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGBA as _, img.width() as _, img.height() as _,
-            0, gl::RGBA, gl::UNSIGNED_BYTE, data);
-        
-        gl::GenerateMipmap(gl::TEXTURE_2D);
-        
-        gl::UseProgram(program);
-        let location = gl::GetUniformLocation(program, "texture1\0".as_ptr() as _); 
-        gl::Uniform1i(location, 0);
-
-        image_size = [img.width() as i32, img.height() as i32];
-        
-        let location = gl::GetUniformLocation(program, "aspect_ratio\0".as_ptr() as _);
-        gl::Uniform1f(location, 1.0);
-    }
-    
-    let vertex_array = create_vertex_array();
-
-    let mut app_data = AppData {
-        image_filename: filename,
-        window_size: [1,1],
-        image_size: image_size,
-        gl_data: GLData {
-            program: program,
-            vertex_array: vertex_array.vertex_array,
-            buffer: vertex_array.buffer,
-            texture: texture1,
-        },
+    let mut app_data = {
+        let filename = args[0].clone();
+        AppData::new(filename)
     };
-
-    let mut next_check_time = std::time::Instant::now() + std::time::Duration::new(2, 0);
 
     el.run(move |event, _, control_flow| {
         use glutin::event::{Event, WindowEvent, StartCause};
         use glutin::event_loop::ControlFlow;
 
-        *control_flow = ControlFlow::WaitUntil(next_check_time);
+        *control_flow = ControlFlow::WaitUntil(app_data.next_update_time);
+
         match event {
             Event::LoopDestroyed => return,
 
             Event::NewEvents(cause) => match cause {
                 StartCause::ResumeTimeReached { .. } => {
-                    use std::time::{Instant, Duration};
-                    next_check_time = Instant::now() + Duration::new(1, 0);
-                    *control_flow = ControlFlow::WaitUntil(next_check_time);
+                    app_data.next_update_time += app_data.time_between_updates;
+                    *control_flow = ControlFlow::WaitUntil(app_data.next_update_time);
 
-                    let mdata = std::fs::metadata(&app_data.image_filename).unwrap();
-                    let new_last_write_time = mdata.modified().unwrap();
-                    if last_write_time < new_last_write_time {
-                        last_write_time = new_last_write_time;
-                        let img = load_image(&app_data.image_filename);
-
-                        unsafe {
-
-                            gl::BindTexture(gl::TEXTURE_2D, app_data.gl_data.texture);
-
-                            let data = img.as_ptr() as _;
-                            gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGBA as _,
-                                img.width() as _, img.height() as _,
-                                0, gl::RGBA, gl::UNSIGNED_BYTE, data);
-            
-                            gl::GenerateMipmap(gl::TEXTURE_2D);
-
-                            app_data.image_size = [img.width() as i32, img.height() as i32];
-
-                            let window_aspect_ratio =
-                                (app_data.window_size[0] as f32) / (app_data.window_size[1] as f32);
-                            let image_aspect_ratio =
-                                (app_data.image_size[0] as f32) / (app_data.image_size[1] as f32);
-                            let aspect_ratio = image_aspect_ratio / window_aspect_ratio;
-
-                            gl::UseProgram(app_data.gl_data.program);
-                            let location = gl::GetUniformLocation(app_data.gl_data.program,
-                                "aspect_ratio\0".as_ptr() as _);
-                            gl::Uniform1f(location, aspect_ratio);
+                    if let Ok(sig) = FileSignature::new(&app_data.image_path) {
+                        if app_data.sig != sig {
+                            app_data.sig = sig;
+                            if app_data.reload_texture().is_ok() {
+                                wc.window().request_redraw()
+                            }
                         }
-
-                        wc.window().request_redraw();
                     }
                 },
 
@@ -124,23 +52,7 @@ fn main() {
                 WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
                 WindowEvent::Resized(physical_size) => {
                     wc.resize(physical_size);
-                    unsafe {
-                        let width = physical_size.width;
-                        let height = physical_size.height;
-                        gl::Viewport(0, 0, width as _, height as _);
-
-                        app_data.window_size = [width as i32, height as i32];
-
-                        let window_aspect_ratio = (width as f32) / (height as f32);
-                        let image_aspect_ratio =
-                            (app_data.image_size[0] as f32) / (app_data.image_size[1] as f32);
-                        let aspect_ratio = image_aspect_ratio / window_aspect_ratio;
-
-                        gl::UseProgram(app_data.gl_data.program);
-                        let location = gl::GetUniformLocation(app_data.gl_data.program,
-                            "aspect_ratio\0".as_ptr() as _);
-                        gl::Uniform1f(location, aspect_ratio);
-                    }
+                    app_data.resize_window([physical_size.width as _, physical_size.height as _]);
                 },
 
                 WindowEvent::KeyboardInput { input, .. } => {
@@ -154,25 +66,31 @@ fn main() {
                 _ => (),
             },
             Event::RedrawRequested(_) => {
-                unsafe {
-                    gl::ClearColor(0.1, 0.1, 0.1, 1.0);
-                    gl::Clear(gl::COLOR_BUFFER_BIT);
-
-                    gl::ActiveTexture(gl::TEXTURE0);
-                    gl::BindTexture(gl::TEXTURE_2D, app_data.gl_data.texture);
-
-                    gl::UseProgram(app_data.gl_data.program);
-
-                    gl::BindVertexArray(app_data.gl_data.vertex_array);
-                    gl::DrawArrays(gl::TRIANGLES, 0, 6);
-                }
-
+                app_data.redraw();
                 wc.swap_buffers().unwrap();
             },
 
             _ => (),
         }
     });
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileSignature {
+    modified: Option<std::time::SystemTime>,
+    created: Option<std::time::SystemTime>,
+    len: u64,
+}
+
+impl FileSignature {
+    fn new<P: AsRef<std::path::Path>>(path: P) -> Result<FileSignature, Box<dyn std::error::Error>> {
+        let mdata = std::fs::metadata(path)?;
+        Ok(FileSignature {
+            modified: mdata.modified().ok(),
+            created: mdata.created().ok(),
+            len: mdata.len(),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -186,10 +104,94 @@ struct GLData {
 
 #[derive(Debug, Clone)]
 struct AppData {
-    image_filename: String,
+    image_path: std::path::PathBuf,
+    sig: FileSignature,
     window_size: [i32;2],
     image_size: [i32;2],
+    next_update_time: std::time::Instant,
+    time_between_updates: std::time::Duration,
     gl_data: GLData,
+}
+
+impl AppData {
+    fn new<P: Into<std::path::PathBuf>>(image_path: P) -> AppData {
+        let program = create_program();
+        let texture = create_texture();
+        let vertex_array = create_vertex_array();
+
+        let time_between_updates = std::time::Duration::new(1, 0);
+        let image_path = image_path.into();
+        let sig = FileSignature::new(&image_path).unwrap();
+    
+        let mut app_data = AppData {
+            image_path: image_path,
+            sig: sig,
+            window_size: [1,1],
+            image_size: [1,1],
+            time_between_updates: time_between_updates,
+            next_update_time: std::time::Instant::now() + time_between_updates,
+            gl_data: GLData {
+                program: program,
+                vertex_array: vertex_array.vertex_array,
+                buffer: vertex_array.buffer,
+                texture: texture,
+            },
+        };
+    
+        if let Err(_) = app_data.reload_texture() {
+            eprintln!("failed to load {:?}", app_data.image_path);
+            std::process::exit(-1);
+        }
+
+        app_data
+    }
+
+    fn redraw(&self) {
+        unsafe {
+            gl::ClearColor(0.1, 0.1, 0.1, 1.0);
+            gl::Clear(gl::COLOR_BUFFER_BIT);
+
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::BindTexture(gl::TEXTURE_2D, self.gl_data.texture);
+
+            gl::UseProgram(self.gl_data.program);
+
+            gl::BindVertexArray(self.gl_data.vertex_array);
+            gl::DrawArrays(gl::TRIANGLES, 0, 6);
+        }
+    }
+
+    fn reload_texture(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        println!("reloading texture, {:?}", std::time::Instant::now());
+        self.image_size =
+            load_texture(&self.image_path, self.gl_data.texture)?
+            .size;
+
+        self.recalculate_aspect_ratio();
+        Ok(())
+    }
+
+    fn resize_window(&mut self, size: [i32;2]) {
+        self.window_size = size;
+        self.recalculate_aspect_ratio();
+        
+        unsafe { gl::Viewport(0, 0, size[0], size[1]); }
+    }
+
+    fn recalculate_aspect_ratio(&self) {
+        let window_aspect_ratio =
+            (self.window_size[0] as f32) / (self.window_size[1] as f32);
+        let image_aspect_ratio =
+            (self.image_size[0] as f32) / (self.image_size[1] as f32);
+        let aspect_ratio = image_aspect_ratio / window_aspect_ratio;
+
+        unsafe {
+            gl::UseProgram(self.gl_data.program);
+            let location = gl::GetUniformLocation(self.gl_data.program,
+                "aspect_ratio\0".as_ptr() as _);
+            gl::Uniform1f(location, aspect_ratio);
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -197,9 +199,12 @@ struct TextureMetadata {
     size: [i32;2],
 }
 
-fn load_texture<P: AsRef<std::path::Path>>(filename: P, texture_id: u32) -> TextureMetadata {
+fn load_texture<P: AsRef<std::path::Path>>(filename: P, texture_id: u32)
+-> Result<TextureMetadata, Box<dyn std::error::Error>>
+{
     unsafe {
-        let img = image::open(filename).unwrap().into_rgba8();
+        let img = image::open(filename)?
+            .into_rgba8();
 
         gl::BindTexture(gl::TEXTURE_2D, texture_id);
 
@@ -212,17 +217,8 @@ fn load_texture<P: AsRef<std::path::Path>>(filename: P, texture_id: u32) -> Text
 
         let size = [img.width() as i32, img.height() as i32];
 
-        TextureMetadata { size }
+        Ok(TextureMetadata { size })
     }
-}
-
-fn load_image<P: AsRef<std::path::Path>> (filename: P) -> image::RgbaImage {
-    #[allow(unused_imports)]
-    use image::{GenericImage, GenericImageView, ImageBuffer, RgbImage};
-
-    let img = image::open(filename).unwrap().into_rgba8();
-
-    img
 }
 
 pub struct BufferData {
@@ -278,6 +274,20 @@ fn create_vertex_array() -> BufferData {
     }
 }
 
+fn create_texture() -> u32 {
+    unsafe {
+        let mut texture = 0;
+        gl::GenTextures(1, &mut texture);
+        gl::BindTexture(gl::TEXTURE_2D, texture);
+        
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as _);
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as _);
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as _);
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as _);
+        texture
+    }
+}
+
 fn create_program() -> u32 {
     unsafe {
         let vshader = compile_shader(shader_code::VERTEX_SHADER_SOURCE, gl::VERTEX_SHADER);
@@ -288,10 +298,15 @@ fn create_program() -> u32 {
         gl::AttachShader(program, fshader);
         gl::LinkProgram(program);
         
-        gl::UseProgram(program);
-        
         gl::DeleteShader(vshader);
         gl::DeleteShader(fshader);
+
+        gl::UseProgram(program);
+        let location = gl::GetUniformLocation(program, "texture1\0".as_ptr() as _); 
+        gl::Uniform1i(location, 0);
+
+        let location = gl::GetUniformLocation(program, "aspect_ratio\0".as_ptr() as _);
+        gl::Uniform1f(location, 1.0);
 
         program
     }
