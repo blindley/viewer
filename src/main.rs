@@ -162,7 +162,6 @@ impl AppData {
     }
 
     fn reload_texture(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("reloading texture, {:?}", std::time::Instant::now());
         self.image_size =
             load_texture(&self.image_path, self.gl_data.texture)?
             .size;
