@@ -98,6 +98,8 @@ impl FileSignature {
 struct GLData {
     program: u32,
     vertex_array: u32,
+    draw_mode: gl::types::GLenum,
+    vertex_count: i32,
     texture: u32,
     buffer: u32,
 }
@@ -133,6 +135,8 @@ impl AppData {
             gl_data: GLData {
                 program: program,
                 vertex_array: vertex_array.vertex_array,
+                draw_mode: vertex_array.draw_mode,
+                vertex_count: vertex_array.vertex_count,
                 buffer: vertex_array.buffer,
                 texture: texture,
             },
@@ -157,7 +161,7 @@ impl AppData {
             gl::UseProgram(self.gl_data.program);
 
             gl::BindVertexArray(self.gl_data.vertex_array);
-            gl::DrawArrays(gl::TRIANGLES, 0, 6);
+            gl::DrawArrays(self.gl_data.draw_mode, 0, self.gl_data.vertex_count);
         }
     }
 
@@ -224,6 +228,8 @@ pub struct BufferData {
     #[allow(dead_code)]
     buffer: u32,
     vertex_array: u32,
+    draw_mode: gl::types::GLenum,
+    vertex_count: i32,
 }
 
 fn create_vertex_array() -> BufferData {
@@ -234,10 +240,8 @@ fn create_vertex_array() -> BufferData {
             // position  // tex coords
             -1.0,  1.0,  0.0, 0.0,     // top left 
              1.0,  1.0,  1.0, 0.0,     // top right
-            -1.0, -1.0,  0.0, 1.0,     // bottom left
-            -1.0, -1.0,  0.0, 1.0,     // bottom left
-             1.0,  1.0,  1.0, 0.0,     // top right
              1.0, -1.0,  1.0, 1.0,     // bottom right
+            -1.0, -1.0,  0.0, 1.0,     // bottom left
         ];
 
         let _: f32 = vertices[0]; // dumb hack to force vertices to be array of f32
@@ -266,9 +270,14 @@ fn create_vertex_array() -> BufferData {
 
         gl::BindVertexArray(0);
 
+        let draw_mode = gl::TRIANGLE_FAN;
+        let vertex_count = 4;
+
         BufferData {
             buffer,
             vertex_array,
+            draw_mode,
+            vertex_count,
         }
     }
 }
