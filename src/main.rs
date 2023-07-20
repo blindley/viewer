@@ -96,7 +96,7 @@ impl FileSignature {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct AppData {
     image_path: std::path::PathBuf,
     sig: FileSignature,
@@ -159,7 +159,7 @@ impl AppData {
     fn recalculate_aspect_ratio(&self) {
         let window_aspect_ratio =
             (self.window_size[0] as f32) / (self.window_size[1] as f32);
-        let image_size = self.renderer.get_size();
+        let image_size = self.renderer.get_image_size();
         let image_aspect_ratio =
             (image_size[0] as f32) / (image_size[1] as f32);
 

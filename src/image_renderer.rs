@@ -1,6 +1,6 @@
 use std::path::Path;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ImageRenderer {
     program: u32,
     vertex_array: u32,
@@ -51,7 +51,7 @@ impl ImageRenderer {
         Ok(())
     }
 
-    pub fn get_size(&self) -> [i32; 2] {
+    pub fn get_image_size(&self) -> [i32; 2] {
         self.texture_size
     }
 
