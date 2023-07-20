@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 mod image_renderer;
 use image_renderer::ImageRenderer;
 
