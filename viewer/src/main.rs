@@ -26,28 +26,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         AppData::new(filename)
     };
 
+    let frame_duration = std::time::Duration::new(0, 1000000000 / 60);
+    let mut next_update_time = std::time::Instant::now() + frame_duration;
+
     el.run(move |event, _, control_flow| {
         use glutin::event::{Event, WindowEvent, StartCause};
         use glutin::event_loop::ControlFlow;
 
-        *control_flow = ControlFlow::WaitUntil(app_data.next_update_time);
+        *control_flow = ControlFlow::WaitUntil(next_update_time);
 
         match event {
             Event::LoopDestroyed => return,
 
             Event::NewEvents(cause) => match cause {
                 StartCause::ResumeTimeReached { .. } => {
-                    app_data.next_update_time += app_data.time_between_updates;
-                    *control_flow = ControlFlow::WaitUntil(app_data.next_update_time);
-
-                    if let Ok(sig) = FileSignature::new(&app_data.image_path) {
-                        if app_data.sig != sig {
-                            app_data.sig = sig;
-                            if app_data.reload_texture().is_ok() {
-                                wc.window().request_redraw()
-                            }
-                        }
+                    if app_data.update(frame_duration.as_secs_f32()) {
+                        wc.window().request_redraw();
                     }
+
+                    next_update_time = next_update_time + frame_duration;
+                    *control_flow = ControlFlow::WaitUntil(next_update_time);
                 },
 
                 _ => (),
@@ -103,9 +101,9 @@ struct AppData {
     image_path: std::path::PathBuf,
     sig: FileSignature,
     window_size: [i32;2],
-    next_update_time: std::time::Instant,
-    time_between_updates: std::time::Duration,
     renderer: ImageRenderer,
+    
+    seconds_elapsed: f32,
 }
 
 impl AppData {
@@ -114,7 +112,6 @@ impl AppData {
         let image_path = image_path.into();
         renderer.set_texture_data(&image_path).unwrap();
         
-        let time_between_updates = std::time::Duration::new(1, 0);
         let image_path = image_path.into();
         let sig = FileSignature::new(&image_path).unwrap();
     
@@ -122,9 +119,8 @@ impl AppData {
             image_path,
             sig: sig,
             window_size: [1,1],
-            time_between_updates: time_between_updates,
-            next_update_time: std::time::Instant::now() + time_between_updates,
             renderer,
+            seconds_elapsed: 0.0,
         };
     
         if let Err(_) = app_data.reload_texture() {
@@ -172,6 +168,27 @@ impl AppData {
             let xscale = image_aspect_ratio / window_aspect_ratio;
             self.renderer.set_scale([xscale, 1.0]);
         }
+    }
+
+    fn update(&mut self, seconds_elapsed: f32) -> bool {
+        self.seconds_elapsed += seconds_elapsed;
+
+        if self.seconds_elapsed >= 1.0 {
+            // just reset it, we don't need a stable framerate
+            self.seconds_elapsed = 0.0;
+
+            // check if file has been modified
+            if let Ok(sig) = FileSignature::new(&self.image_path) {
+                if self.sig != sig {
+                    self.sig = sig;
+                    if self.reload_texture().is_ok() {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
     }
 }
 
