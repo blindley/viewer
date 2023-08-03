@@ -1,17 +1,13 @@
 #![windows_subsystem = "windows"]
 
+use clap::Parser;
+
 mod image_renderer;
 use image_renderer::{Renderer, ImageRenderer};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<_> = std::env::args().skip(1).collect();
+    let cli = Cli::parse();
 
-    if args.len() < 1 {
-        eprintln!("expected image filename");
-        std::process::exit(-1);
-    }
-
-    
     let el = glutin::event_loop::EventLoop::new();
     let wb = glutin::window::WindowBuilder::new()
     .with_title("fuzzy pickles");
@@ -21,10 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     gl::load_with(|p| wc.get_proc_address(p) as *const _);
     
-    let mut app_data = {
-        let filename = args[0].clone();
-        AppData::new(filename)
-    };
+    let mut app_data = AppData::new(cli.image_path);
 
     let frame_duration = std::time::Duration::new(0, 1000000000 / 60);
     let mut next_update_time = std::time::Instant::now() + frame_duration;
@@ -76,6 +69,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => (),
         }
     });
+}
+
+/// A basic image viewer
+#[derive(Debug, Parser)]
+struct Cli {
+    image_path: std::path::PathBuf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

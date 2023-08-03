@@ -9,3 +9,4 @@ edition = "2021"
 glutin = "0.28"
 gl = "*"
 image = "0.23"
+clap = { version="4", features=["derive"] }
