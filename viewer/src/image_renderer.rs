@@ -7,6 +7,20 @@ pub trait Renderer {
 }
 
 #[derive(Debug)]
+pub struct Texture {
+    pub texture_id: u32,
+    pub size: [i32; 2],
+}
+
+impl Texture {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Texture, Box<dyn std::error::Error>> {
+        let texture_id = create_texture();
+        let tex_data = load_texture(path, texture_id)?;
+        Ok(Texture { texture_id, size: tex_data.size, })
+    }
+}
+
+#[derive(Debug)]
 pub struct ImageRenderer {
     program: u32,
     vertex_array: u32,
@@ -35,9 +49,9 @@ impl ImageRenderer {
         r
     }
 
-    pub fn set_texture_data<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Box<dyn std::error::Error>> {
-        let tex_data = load_texture(path, self.texture)?;
-        self.texture_size = tex_data.size;
+    pub fn set_texture_data(&mut self, texture: &Texture) -> Result<(), Box<dyn std::error::Error>> {
+        self.texture = texture.texture_id;
+        self.texture_size = texture.size;
         self.texture_loaded = true;
 
         Ok(())
@@ -54,7 +68,6 @@ impl std::ops::Drop for ImageRenderer {
             gl::DeleteBuffers(1, &self.buffer);
             gl::DeleteVertexArrays(1, &self.vertex_array);
             gl::DeleteProgram(self.program);
-            gl::DeleteTextures(1, &self.texture);
         }
     }
 }

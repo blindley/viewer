@@ -1,23 +1,23 @@
-#![windows_subsystem = "windows"]
+// #![windows_subsystem = "windows"]
 
 use clap::Parser;
 
 mod image_renderer;
-use image_renderer::{Renderer, ImageRenderer};
+use image_renderer::{Renderer, ImageRenderer, Texture};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     let el = glutin::event_loop::EventLoop::new();
     let wb = glutin::window::WindowBuilder::new()
-    .with_title("fuzzy pickles");
+        .with_title("fuzzy pickles");
     
     let wc = glutin::ContextBuilder::new().build_windowed(wb, &el).unwrap();
     let wc = unsafe { wc.make_current().unwrap() };
     
     gl::load_with(|p| wc.get_proc_address(p) as *const _);
     
-    let mut app_data = AppData::new(cli.image_path);
+    let mut app_data = AppData::new(cli.image_paths);
 
     let frame_duration = std::time::Duration::new(0, 1000000000 / 60);
     let mut next_update_time = std::time::Instant::now() + frame_duration;
@@ -52,9 +52,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
 
                 WindowEvent::KeyboardInput { input, .. } => {
-                    use glutin::event::VirtualKeyCode::Escape;
-                    match input.virtual_keycode {
-                        Some(Escape) => *control_flow = ControlFlow::Exit,
+                    use glutin::event::VirtualKeyCode::{Escape, Left, Right};
+                    use glutin::event::ElementState::Pressed;
+                    match (input.virtual_keycode, input.state) {
+                        (Some(Escape), Pressed) => *control_flow = ControlFlow::Exit,
+                        (Some(Left), Pressed) => {
+                            let new_index = app_data.current_image_index + app_data.image_paths.len() - 1;
+                            app_data.current_image_index = new_index % app_data.image_paths.len();
+                            app_data.reload_texture().unwrap();
+                            wc.window().request_redraw();
+                        },
+                        (Some(Right), Pressed) => {
+                            let new_index = app_data.current_image_index + 1;
+                            app_data.current_image_index = new_index % app_data.image_paths.len();
+                            app_data.reload_texture().unwrap();
+                            wc.window().request_redraw();
+                        },
                         _ => (),
                     }
                 },
@@ -74,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// A basic image viewer
 #[derive(Debug, Parser)]
 struct Cli {
-    image_path: std::path::PathBuf,
+    image_paths: Vec<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,9 +109,16 @@ impl FileSignature {
 }
 
 #[derive(Debug)]
-struct AppData {
-    image_path: std::path::PathBuf,
+struct TextureFile {
+    texture: Texture,
+    path: std::path::PathBuf,
     sig: FileSignature,
+}
+
+#[derive(Debug)]
+struct AppData {
+    image_paths: Vec<TextureFile>,
+    current_image_index: usize,
     window_size: [i32;2],
     renderer: StableAspectRatioImageRenderer,
     
@@ -106,24 +126,27 @@ struct AppData {
 }
 
 impl AppData {
-    fn new<P: Into<std::path::PathBuf>>(image_path: P) -> AppData {
-        let mut renderer = StableAspectRatioImageRenderer::new();
-        let image_path = image_path.into();
-        renderer.set_texture_data(&image_path).unwrap();
-        
-        let image_path = image_path.into();
-        let sig = FileSignature::new(&image_path).unwrap();
-    
+    fn new(image_paths: Vec<std::path::PathBuf>) -> AppData {
+        let renderer = StableAspectRatioImageRenderer::new();
+        // renderer.set_texture_data(&image_paths[0]).unwrap();
+
+        let image_paths = image_paths.iter().map(|p| {
+                let sig = FileSignature::new(p).unwrap();
+                let texture = Texture::from_file(p).unwrap();
+                TextureFile { texture, path: p.clone(), sig }
+            }
+        ).collect();
+
         let mut app_data = AppData {
-            image_path,
-            sig: sig,
+            image_paths,
+            current_image_index: 0,
             window_size: [1,1],
             renderer,
             seconds_elapsed: 0.0,
         };
     
         if let Err(_) = app_data.reload_texture() {
-            eprintln!("failed to load {:?}", app_data.image_path);
+            eprintln!("failed to load {:?}", app_data.image_paths[0].path);
             std::process::exit(-1);
         }
 
@@ -140,7 +163,8 @@ impl AppData {
     }
 
     fn reload_texture(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.renderer.set_texture_data(&self.image_path)?;
+        let texture = &self.image_paths[self.current_image_index].texture;
+        self.renderer.set_texture_data(texture)?;
         Ok(())
     }
 
@@ -158,10 +182,12 @@ impl AppData {
             // just reset it, we don't need a stable framerate
             self.seconds_elapsed = 0.0;
 
+            let f = &mut self.image_paths[self.current_image_index];
+
             // check if file has been modified
-            if let Ok(sig) = FileSignature::new(&self.image_path) {
-                if self.sig != sig {
-                    self.sig = sig;
+            if let Ok(sig) = FileSignature::new(&f.path) {
+                if f.sig != sig {
+                    f.sig = sig;
                     if self.reload_texture().is_ok() {
                         return true;
                     }
@@ -216,10 +242,10 @@ impl StableAspectRatioImageRenderer {
         }
     }
 
-    pub fn set_texture_data<P: AsRef<std::path::Path>>(&mut self, path: P)
+    pub fn set_texture_data(&mut self, texture: &Texture)
         -> Result<(), Box<dyn std::error::Error>>
     {
-        self.image_renderer.set_texture_data(path)?;
+        self.image_renderer.set_texture_data(texture)?;
         self.recalculate_aspect_ratio();
         Ok(())
     }
