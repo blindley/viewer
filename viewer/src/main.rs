@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let el = glutin::event_loop::EventLoop::new();
     let wb = glutin::window::WindowBuilder::new()
-        .with_title("fuzzy pickles");
+        .with_title(cli.image_paths[0].to_string_lossy().to_owned());
     
     let wc = glutin::ContextBuilder::new().build_windowed(wb, &el).unwrap();
     let wc = unsafe { wc.make_current().unwrap() };
@@ -60,12 +60,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let new_index = app_data.current_image_index + app_data.image_paths.len() - 1;
                             app_data.current_image_index = new_index % app_data.image_paths.len();
                             app_data.reload_texture().unwrap();
+                            let new_title = app_data.current_image_path().to_string_lossy();
+                            wc.window().set_title(&new_title);
                             wc.window().request_redraw();
                         },
                         (Some(Right), Pressed) => {
                             let new_index = app_data.current_image_index + 1;
                             app_data.current_image_index = new_index % app_data.image_paths.len();
                             app_data.reload_texture().unwrap();
+                            let new_title = app_data.current_image_path().to_string_lossy();
+                            wc.window().set_title(&new_title);
                             wc.window().request_redraw();
                         },
                         _ => (),
@@ -196,6 +200,10 @@ impl AppData {
         }
 
         false
+    }
+
+    fn current_image_path(&self) -> &std::path::PathBuf {
+        &self.image_paths[self.current_image_index].path
     }
 }
 
