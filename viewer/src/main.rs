@@ -8,16 +8,24 @@ use image_renderer::{Renderer, ImageRenderer, Texture};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
+    let image_paths = {
+        if cli.image_paths.len() != 0 {
+            cli.image_paths
+        } else {
+            all_images_in_directory(".")?
+        }
+    };
+
     let el = glutin::event_loop::EventLoop::new();
     let wb = glutin::window::WindowBuilder::new()
-        .with_title(cli.image_paths[0].to_string_lossy().to_owned());
+        .with_title(image_paths[0].to_string_lossy().to_owned());
     
     let wc = glutin::ContextBuilder::new().build_windowed(wb, &el).unwrap();
     let wc = unsafe { wc.make_current().unwrap() };
     
     gl::load_with(|p| wc.get_proc_address(p) as *const _);
     
-    let mut app_data = AppData::new(cli.image_paths);
+    let mut app_data = AppData::new(image_paths);
 
     let frame_duration = std::time::Duration::new(0, 1000000000 / 60);
     let mut next_update_time = std::time::Instant::now() + frame_duration;
@@ -86,6 +94,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => (),
         }
     });
+}
+
+fn all_images_in_directory<P: AsRef<std::path::Path>>(dir: P)
+    -> std::io::Result<Vec<std::path::PathBuf>>
+{
+    let mut paths = Vec::new();
+
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        if let Some(ext) = entry.path().extension() {
+            if let Some(ext_str) = ext.to_str() {
+                match ext_str {
+                    "png" | "jpg" | "bmp" | "gif" | "jpeg"
+                        => paths.push(entry.path().clone()),
+                    _ => (),
+                }
+            }
+        }
+    }
+
+    Ok(paths)
 }
 
 /// A basic image viewer
