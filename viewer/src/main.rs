@@ -1,7 +1,7 @@
 #![windows_subsystem = "windows"]
 
 mod image_renderer;
-use image_renderer::ImageRenderer;
+use image_renderer::{Renderer, ImageRenderer};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
@@ -101,14 +101,14 @@ struct AppData {
     image_path: std::path::PathBuf,
     sig: FileSignature,
     window_size: [i32;2],
-    renderer: ImageRenderer,
+    renderer: StableAspectRatioImageRenderer,
     
     seconds_elapsed: f32,
 }
 
 impl AppData {
     fn new<P: Into<std::path::PathBuf>>(image_path: P) -> AppData {
-        let mut renderer = ImageRenderer::new();
+        let mut renderer = StableAspectRatioImageRenderer::new();
         let image_path = image_path.into();
         renderer.set_texture_data(&image_path).unwrap();
         
@@ -142,32 +142,14 @@ impl AppData {
 
     fn reload_texture(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.renderer.set_texture_data(&self.image_path)?;
-
-        self.recalculate_aspect_ratio();
         Ok(())
     }
 
     fn resize_window(&mut self, size: [i32;2]) {
         self.window_size = size;
-        self.recalculate_aspect_ratio();
+        self.renderer.resize_window(size);
         
         unsafe { gl::Viewport(0, 0, size[0], size[1]); }
-    }
-
-    fn recalculate_aspect_ratio(&self) {
-        let window_aspect_ratio =
-            (self.window_size[0] as f32) / (self.window_size[1] as f32);
-        let image_size = self.renderer.get_image_size();
-        let image_aspect_ratio =
-            (image_size[0] as f32) / (image_size[1] as f32);
-
-        if window_aspect_ratio < image_aspect_ratio {
-            let yscale = window_aspect_ratio / image_aspect_ratio;
-            self.renderer.set_scale([1.0, yscale]);
-        } else {
-            let xscale = image_aspect_ratio / window_aspect_ratio;
-            self.renderer.set_scale([xscale, 1.0]);
-        }
     }
 
     fn update(&mut self, seconds_elapsed: f32) -> bool {
@@ -192,3 +174,74 @@ impl AppData {
     }
 }
 
+#[derive(Debug)]
+struct StableAspectRatioImageRenderer {
+    image_renderer: ImageRenderer,
+    window_size: [i32;2],
+    scale: [f32;2],
+    translate: [f32;2],
+}
+
+impl StableAspectRatioImageRenderer {
+    pub fn new() -> StableAspectRatioImageRenderer {
+        StableAspectRatioImageRenderer {
+            image_renderer: ImageRenderer::new(),
+            window_size: [1,1],
+            scale: [1.0, 1.0],
+            translate: [0.0, 0.0]
+        }
+    }
+
+    fn resize_window(&mut self, size: [i32;2]) {
+        self.window_size = size;
+        self.recalculate_aspect_ratio();
+    }
+
+    fn recalculate_aspect_ratio(&mut self) {
+        let view_width = (self.window_size[0] as f32) * self.scale[0];
+        let view_height = (self.window_size[1] as f32) * self.scale[1];
+        let view_aspect_ratio = view_width / view_height;
+
+        let image_size = self.get_image_size();
+        let image_aspect_ratio =
+            (image_size[0] as f32) / (image_size[1] as f32);
+
+        if view_aspect_ratio < image_aspect_ratio {
+            let yscale = view_aspect_ratio / image_aspect_ratio;
+            let scale = [self.scale[0], self.scale[1] * yscale];
+            self.image_renderer.set_scale(scale);
+        } else {
+            let xscale = image_aspect_ratio / view_aspect_ratio;
+            let scale = [self.scale[0] * xscale, self.scale[1]];
+            self.image_renderer.set_scale(scale);
+        }
+    }
+
+    pub fn set_texture_data<P: AsRef<std::path::Path>>(&mut self, path: P)
+        -> Result<(), Box<dyn std::error::Error>>
+    {
+        self.image_renderer.set_texture_data(path)?;
+        self.recalculate_aspect_ratio();
+        Ok(())
+    }
+
+    pub fn get_image_size(&self) -> [i32; 2] {
+        self.image_renderer.get_image_size()
+    }
+}
+
+impl Renderer for StableAspectRatioImageRenderer {
+    fn render(&self) {
+        self.image_renderer.render();
+    }
+
+    fn set_scale(&mut self, scale: [f32;2]) {
+        self.scale = scale;
+        self.recalculate_aspect_ratio();
+    }
+
+    fn set_translate(&mut self, translate: [f32;2]) {
+        self.translate = translate;
+        self.image_renderer.set_translate(translate);
+    }
+}

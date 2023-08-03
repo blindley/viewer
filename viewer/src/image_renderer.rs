@@ -1,5 +1,11 @@
 use std::path::Path;
 
+pub trait Renderer {
+    fn render(&self);
+    fn set_scale(&mut self, scale: [f32;2]);
+    fn set_translate(&mut self, translate: [f32;2]);
+}
+
 #[derive(Debug)]
 pub struct ImageRenderer {
     program: u32,
@@ -17,30 +23,16 @@ impl ImageRenderer {
         let texture = create_texture();
         let BufferData { buffer, vertex_array } = create_vertex_array();
 
-        let r = ImageRenderer {
+        let mut r = ImageRenderer {
             program, vertex_array, buffer, texture,
             texture_loaded: false,
             texture_size: [0, 0],
         };
 
         r.set_scale([1.0, 1.0]);
-        r.set_transform([0.0, 0.0]);
+        r.set_translate([0.0, 0.0]);
 
         r
-    }
-
-    pub fn render(&self) {
-        if self.texture_loaded {
-            unsafe {
-                gl::ActiveTexture(gl::TEXTURE0);
-                gl::BindTexture(gl::TEXTURE_2D, self.texture);
-
-                gl::UseProgram(self.program);
-
-                gl::BindVertexArray(self.vertex_array);
-                gl::DrawArrays(gl::TRIANGLE_FAN, 0, 4);
-            }
-        }
     }
 
     pub fn set_texture_data<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Box<dyn std::error::Error>> {
@@ -54,24 +46,6 @@ impl ImageRenderer {
     pub fn get_image_size(&self) -> [i32; 2] {
         self.texture_size
     }
-
-    pub fn set_scale(&self, scale: [f32;2]) {
-        unsafe {
-            gl::UseProgram(self.program);
-            let location = gl::GetUniformLocation(self.program,
-                "scale\0".as_ptr() as _);
-            gl::Uniform2f(location, scale[0], scale[1]);
-        }
-    }
-
-    pub fn set_transform(&self, transform: [f32;2]) {
-        unsafe {
-            gl::UseProgram(self.program);
-            let location = gl::GetUniformLocation(self.program,
-                "transform\0".as_ptr() as _);
-            gl::Uniform2f(location, transform[0], transform[1]);
-        }
-    }
 }
 
 impl std::ops::Drop for ImageRenderer {
@@ -81,6 +55,40 @@ impl std::ops::Drop for ImageRenderer {
             gl::DeleteVertexArrays(1, &self.vertex_array);
             gl::DeleteProgram(self.program);
             gl::DeleteTextures(1, &self.texture);
+        }
+    }
+}
+
+impl Renderer for ImageRenderer {
+    fn render(&self) {
+        if self.texture_loaded {
+            unsafe {
+                gl::ActiveTexture(gl::TEXTURE0);
+                gl::BindTexture(gl::TEXTURE_2D, self.texture);
+
+                gl::UseProgram(self.program);
+
+                gl::BindVertexArray(self.vertex_array);
+                gl::DrawArrays(gl::TRIANGLE_FAN, 0, 4);
+            }
+        }
+    }
+
+    fn set_scale(&mut self, scale: [f32;2]) {
+        unsafe {
+            gl::UseProgram(self.program);
+            let location = gl::GetUniformLocation(self.program,
+                b"scale\0".as_ptr() as _);
+            gl::Uniform2f(location, scale[0], scale[1]);
+        }
+    }
+
+    fn set_translate(&mut self, translate: [f32;2]) {
+        unsafe {
+            gl::UseProgram(self.program);
+            let location = gl::GetUniformLocation(self.program,
+                b"translate\0".as_ptr() as _);
+            gl::Uniform2f(location, translate[0], translate[1]);
         }
     }
 }
@@ -236,10 +244,10 @@ mod shader_code {
         out vec2 vtcoords;\n\
         \
         uniform vec2 scale;\n\
-        uniform vec2 transform;\n\
+        uniform vec2 translate;\n\
         \
         void main() {\n\
-            gl_Position = vec4(pos * scale + transform, 0.0, 1.0);\n\
+            gl_Position = vec4(pos * scale + translate, 0.0, 1.0);\n\
             vtcoords = tcoords;\n\
         }\n\
         \0";
