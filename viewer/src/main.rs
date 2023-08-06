@@ -10,7 +10,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let image_paths = {
         if cli.image_paths.len() != 0 {
-            cli.image_paths
+            let mut image_paths = Vec::new();
+            for p in cli.image_paths.iter() {
+                if p.is_dir() {
+                    image_paths.append(&mut all_images_in_directory(p)?);
+                } else {
+                    image_paths.push(p.clone());
+                }
+            }
+            image_paths
         } else {
             all_images_in_directory(".")?
         }
