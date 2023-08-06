@@ -65,14 +65,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     match (input.virtual_keycode, input.state) {
                         (Some(Escape), Pressed) => *control_flow = ControlFlow::Exit,
                         (Some(Left), Pressed) => {
-                            app_data.cycle_left();
-                            wc.window().set_title(&app_data.new_window_title());
-                            wc.window().request_redraw();
+                            #[allow(deprecated)]
+                            if input.modifiers.shift() {
+                                app_data.shift_left();
+                                wc.window().set_title(&app_data.new_window_title());
+                            } else {
+                                app_data.cycle_left();
+                                wc.window().set_title(&app_data.new_window_title());
+                                wc.window().request_redraw();
+                            }
                         },
                         (Some(Right), Pressed) => {
-                            app_data.cycle_right();
-                            wc.window().set_title(&app_data.new_window_title());
-                            wc.window().request_redraw();
+                            #[allow(deprecated)]
+                            if input.modifiers.shift() {
+                                app_data.shift_right();
+                                wc.window().set_title(&app_data.new_window_title());
+                            } else {
+                                app_data.cycle_right();
+                                wc.window().set_title(&app_data.new_window_title());
+                                wc.window().request_redraw();
+                            }
                         },
                         (Some(X), Pressed) => {
                             app_data.drop_current();
@@ -252,6 +264,24 @@ impl AppData {
         let new_index = self.current_image_index + 1;
         self.current_image_index = new_index % self.image_paths.len();
         self.reload_texture().unwrap();
+    }
+
+    fn swap_image_positions(&mut self, a: usize, b: usize) {
+        self.image_paths.swap(a, b);
+    }
+
+    fn shift_right(&mut self) {
+        let this_index = self.current_image_index;
+        let other_index = (this_index + 1) % self.image_paths.len();
+        self.swap_image_positions(this_index, other_index);
+        self.current_image_index = other_index;
+    }
+
+    fn shift_left(&mut self) {
+        let this_index = self.current_image_index;
+        let other_index = (this_index + self.image_paths.len() - 1) % self.image_paths.len();
+        self.swap_image_positions(this_index, other_index);
+        self.current_image_index = other_index;
     }
 
     fn drop_current(&mut self) {
