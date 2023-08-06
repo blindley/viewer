@@ -65,19 +65,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     match (input.virtual_keycode, input.state) {
                         (Some(Escape), Pressed) => *control_flow = ControlFlow::Exit,
                         (Some(Left), Pressed) => {
-                            let new_index = app_data.current_image_index + app_data.image_paths.len() - 1;
-                            app_data.current_image_index = new_index % app_data.image_paths.len();
-                            app_data.reload_texture().unwrap();
-                            let new_title = app_data.current_image_path().to_string_lossy();
-                            wc.window().set_title(&new_title);
+                            app_data.cycle_left();
+                            wc.window().set_title(&app_data.new_window_title());
                             wc.window().request_redraw();
                         },
                         (Some(Right), Pressed) => {
-                            let new_index = app_data.current_image_index + 1;
-                            app_data.current_image_index = new_index % app_data.image_paths.len();
-                            app_data.reload_texture().unwrap();
-                            let new_title = app_data.current_image_path().to_string_lossy();
-                            wc.window().set_title(&new_title);
+                            app_data.cycle_right();
+                            wc.window().set_title(&app_data.new_window_title());
                             wc.window().request_redraw();
                         },
                         _ => (),
@@ -233,6 +227,26 @@ impl AppData {
 
     fn current_image_path(&self) -> &std::path::PathBuf {
         &self.image_paths[self.current_image_index].path
+    }
+
+    fn cycle_left(&mut self) {
+        let new_index = self.current_image_index + self.image_paths.len() - 1;
+        self.current_image_index = new_index % self.image_paths.len();
+        self.reload_texture().unwrap();
+    }
+
+    fn cycle_right(&mut self) {
+        let new_index = self.current_image_index + 1;
+        self.current_image_index = new_index % self.image_paths.len();
+        self.reload_texture().unwrap();
+    }
+
+    fn new_window_title(&self) -> String {
+        let image_path = self.current_image_path().to_string_lossy();
+        let [width, height] = self.renderer.get_image_size();
+        let current_index = self.current_image_index + 1;
+        let total = self.image_paths.len();
+        format!("{} | {}x{} | {}/{}", image_path, width, height, current_index, total)
     }
 }
 
