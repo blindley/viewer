@@ -3,7 +3,10 @@
 use clap::Parser;
 
 mod image_renderer;
-use image_renderer::{Renderer, ImageRenderer, Texture};
+use image_renderer::{Renderer, ImageRenderer};
+
+mod texture;
+use texture::Texture;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
