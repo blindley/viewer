@@ -8,6 +8,8 @@ use image_renderer::{Renderer, ImageRenderer};
 mod texture;
 use texture::Texture;
 
+// mod shader;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
@@ -106,6 +108,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 },
 
+                WindowEvent::CursorMoved { position, .. } => {
+                    app_data.cursor_position = [position.x as i32, position.y as i32];
+                    wc.window().set_title(&app_data.new_window_title());
+                }
+
+
                 _ => (),
             },
             Event::RedrawRequested(_) => {
@@ -175,6 +183,7 @@ struct AppData {
     image_paths: Vec<TextureFile>,
     current_image_index: usize,
     window_size: [i32;2],
+    cursor_position: [i32;2],
     renderer: StableAspectRatioImageRenderer,
     
     seconds_elapsed: f32,
@@ -196,6 +205,7 @@ impl AppData {
             image_paths,
             current_image_index: 0,
             window_size: [1,1],
+            cursor_position: [0,0],
             renderer,
             seconds_elapsed: 0.0,
         };
@@ -260,9 +270,11 @@ impl AppData {
     fn new_window_title(&self) -> String {
         let image_path = self.current_image_path().to_string_lossy();
         let [width, height] = self.renderer.get_image_size();
+        let [cursor_x, cursor_y] = self.cursor_position;
         let current_index = self.current_image_index + 1;
         let total = self.image_paths.len();
-        format!("{} | {}x{} | {}/{}", image_path, width, height, current_index, total)
+        format!("{} | {}x{} | {}/{} | ({},{})",
+            image_path, width, height, current_index, total, cursor_x, cursor_y)
     }
 
     fn cycle_left(&mut self) {
